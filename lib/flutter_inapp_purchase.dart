@@ -75,10 +75,10 @@ class FlutterInappPurchase {
         code: _platform.operatingSystem, message: "platform not supported");
   }
 
-  /// InitConnection `Android` to purchase items.
+  /// InitConnection prepare iap features for both `Android` and `iOS`.
   ///
-  /// Must be called on `Android` before purchasing.
-  /// On `iOS` this just checks if the client can make payments.
+  /// This must be called on `Android` and `iOS` before purchasing.
+  /// On `iOS`, it also checks if the client can make payments.
   Future<String> get initConnection async {
     if (_platform.isAndroid) {
       await _setPurchaseListener();
@@ -368,6 +368,15 @@ class FlutterInappPurchase {
   /// Consumes a purchase on `Android`.
   ///
   /// No effect on `iOS`, whose consumable purchases are consumed at the time of purchase.
+  ///
+  /// if you already invoked [getProducts],you ought to invoked this method to confirm you have consumed.
+  /// that means you can purchase one IAPItem more times, otherwise you'll receive error code : 7
+  ///
+  /// in DoobooUtils.java error like this:
+  /// case BillingClient.BillingResponseCode.ITEM_ALREADY_OWNED:
+  ///        errorData[0] = E_ALREADY_OWNED;
+  ///        errorData[1] = "You already own this item.";
+  ///        break;
   Future<String> consumePurchaseAndroid(String token, { String developerPayload }) async {
     if (_platform.isAndroid) {
       String result =
@@ -383,19 +392,18 @@ class FlutterInappPurchase {
         code: _platform.operatingSystem, message: "platform not supported");
   }
 
-  /// End Play Store connection on `Android`.
+  /// End Play Store connection on `Android` and remove iap observer in `iOS`.
   ///
-  /// Absolutely necessary to call this when done with the Play Store.
-  ///
-  /// No effect on `iOS`, whose store connection is always available.
+  /// Absolutely necessary to call this when done with the payment.
   Future<String> get endConnection async {
     if (_platform.isAndroid) {
       final String result = await _channel.invokeMethod('endConnection');
       _removePurchaseListener();
       return result;
     } else if (_platform.isIOS) {
+      final String result = await _channel.invokeMethod('endConnection');
       _removePurchaseListener();
-      return 'no-ops in ios';
+      return result;
     }
     throw PlatformException(
         code: _platform.operatingSystem, message: "platform not supported");
@@ -423,7 +431,7 @@ class FlutterInappPurchase {
   ///
   /// Call this after finalizing server-side validation of the reciept.
   Future<String> finishTransaction(PurchasedItem purchasedItem,
-    { String developerPayloadAndroid, bool isConsumable }) async {
+    { String developerPayloadAndroid = '', bool isConsumable = false }) async {
     if (_platform.isAndroid) {
       if (isConsumable) {
         String result = await _channel.invokeMethod('consumeProduct', <String, dynamic>{
@@ -484,10 +492,11 @@ class FlutterInappPurchase {
   /// It is highly recommended to do server-side validation for all subscriptions.
   /// This method is NOT secure and untested in production.
   Future<bool> checkSubscribed({
-    String sku,
+    @required String sku,
     Duration duration: const Duration(days: 30),
     Duration grace: const Duration(days: 3),
   }) async {
+    assert(sku != null);
     if (_platform.isIOS) {
       var history = await getPurchaseHistory();
 
@@ -630,7 +639,8 @@ class FlutterInappPurchase {
         ..add(null)
         ..close();
       _purchaseController = null;
-    } else if (_purchaseErrorController != null) {
+    } 
+    if (_purchaseErrorController != null) {
       _purchaseErrorController
         ..add(null)
         ..close();

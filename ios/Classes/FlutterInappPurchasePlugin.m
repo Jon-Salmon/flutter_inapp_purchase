@@ -1,5 +1,6 @@
 #import "FlutterInappPurchasePlugin.h"
-#import "IAPPromotionObserver.h"
+
+#import <IAPPromotionObserver.h>
 
 @interface FlutterInappPurchasePlugin() {
     SKPaymentTransaction *currentTransaction;
@@ -30,7 +31,6 @@
     instance.channel = [FlutterMethodChannel
                         methodChannelWithName:@"flutter_inapp"
                         binaryMessenger:[registrar messenger]];
-    [[SKPaymentQueue defaultQueue] addTransactionObserver:instance];
     [registrar addMethodCallDelegate:instance channel:instance.channel];
 }
 
@@ -42,6 +42,7 @@
     self.appStoreInitiatedProducts = [[NSMutableArray alloc] init];
     self.purchases = [[NSMutableSet alloc] init];
     validProducts = [NSMutableArray array];
+    [IAPPromotionObserver sharedObserver].delegate = self;
 
     return self;
 }
@@ -55,7 +56,11 @@
     if ([@"getPlatformVersion" isEqualToString:call.method]) {
         result([@"iOS " stringByAppendingString:[[UIDevice currentDevice] systemVersion]]);
     } else if ([@"canMakePayments" isEqualToString:call.method]) {
+        [[SKPaymentQueue defaultQueue] addTransactionObserver:self];
         [self canMakePayments:result];
+    } else if ([@"endConnection" isEqualToString:call.method]) {
+        [[SKPaymentQueue defaultQueue] removeTransactionObserver:self];
+        result(@"Billing client ended");
     } else if ([@"getItems" isEqualToString:call.method]) {
         NSArray<NSString*>* identifiers = (NSArray<NSString*>*)call.arguments[@"skus"];
         if (identifiers != nil) {
@@ -365,8 +370,6 @@
                   break;
           }
 
-          introductoryPriceNumberOfPeriods = [@(product.introductoryPrice.numberOfPeriods) stringValue];
-
           if (product.introductoryPrice.subscriptionPeriod.unit == SKProductPeriodUnitDay) {
               introductoryPriceSubscriptionPeriod = @"DAY";
           }	else if (product.introductoryPrice.subscriptionPeriod.unit == SKProductPeriodUnitWeek) {
@@ -539,6 +542,7 @@
                 NSLog(@"Deferred (awaiting approval via parental controls, etc.)");
                 break;
             case SKPaymentTransactionStateFailed:
+                [[SKPaymentQueue defaultQueue] finishTransaction:transaction];
                 [requestedPayments removeObjectForKey:transaction.payment];
                 NSDictionary *err = [NSDictionary dictionaryWithObjectsAndKeys:
                                      @"SKPaymentTransactionStateFailed", @"debugMessage",
@@ -592,25 +596,6 @@
             
             block(purchase);
         }
-    }];
-}
-
-- (void)purchased:(NSArray<SKPaymentTransaction*>*)transactions {
-    NSMutableArray<FlutterResult>* results = [[NSMutableArray alloc] init];
-
-    [transactions enumerateObjectsUsingBlock:^(SKPaymentTransaction* transaction, NSUInteger idx, BOOL* stop) {
-        [self -> purchases addObject:transaction.payment.productIdentifier];
-        FlutterResult result = [self -> requestedPayments objectForKey:transaction.payment];
-        if (result != nil) {
-            [self -> requestedPayments removeObjectForKey:transaction.payment];
-            [results addObject:result];
-        }
-        [[SKPaymentQueue defaultQueue] finishTransaction:transaction];
-    }];
-
-    NSArray<NSString*>* productIdentifiers = [purchases allObjects];
-    [results enumerateObjectsUsingBlock:^(FlutterResult result, NSUInteger idx, BOOL* stop) {
-        result(productIdentifiers);
     }];
 }
 
