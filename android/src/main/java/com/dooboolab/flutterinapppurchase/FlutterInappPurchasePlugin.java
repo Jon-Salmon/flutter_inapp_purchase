@@ -24,12 +24,21 @@ public class FlutterInappPurchasePlugin implements MethodCallHandler {
   // Plugin registration.
   public static void registerWith(Registrar registrar) {
     mRegistrar = registrar;
-    if(isPackageInstalled(mRegistrar.context(), "com.android.vending")) {
+
+    final boolean playStore = isPackageInstalled(mRegistrar.context(), "com.android.vending");
+    final boolean amazonAppStore = isPackageInstalled(mRegistrar.context(), "com.amazon.venezia");
+
+    if (amazonAppStore && playStore){
+      if (isAppInstalledFrom(mRegistrar.context(), "amazon")){
+        amazonPlugin.registerWith(registrar);
+      } else {
+        androidPlugin.registerWith(registrar);
+      }
+    } else if (playStore) {
       androidPlugin.registerWith(registrar);
-    } else if(isPackageInstalled(mRegistrar.context(), "com.amazon.venezia")) {
+    } else if (amazonAppStore){
       amazonPlugin.registerWith(registrar);
     }
-
   }
 
   @Override
@@ -48,5 +57,14 @@ public class FlutterInappPurchasePlugin implements MethodCallHandler {
       return false;
     }
     return true;
+  }
+
+  public static final boolean isAppInstalledFrom(Context ctx, String installer) {
+    String installerPackageName = ctx.getPackageManager().getInstallerPackageName(
+            ctx.getPackageName());
+    if (installer != null && installerPackageName.contains(installer)){
+      return true;
+    }
+    return false;
   }
 }
